@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  workflow_dispatch:
+
+jobs:
+  create-release-pr:
+    name: Create release PR
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.changeset.outputs.has_changes }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 10.6.1
+          run_install: false
+
+      - name: Setup pnpm cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        id: git-cliff
+        with:
+          config: packages/form/cliff.toml
+          args: --verbose
+        env:
+          OUTPUT: ./CHANGELOG.md
+
+      - name: Create release PR
+        id: changeset
+        uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+          title: "🚀 Release"
+          commit: "chore: release a new version"
+          publish: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Release
+    needs: [create-release-pr]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.create-release-pr.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v2.4.0
+        with:
+          version: 10.6.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm --filter @gdvibes/form build
+
+      - name: Publish to npm
+        uses: changesets/action@v1
+        with:
+          publish: pnpm changeset publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
